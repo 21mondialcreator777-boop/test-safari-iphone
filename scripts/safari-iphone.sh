@@ -48,16 +48,22 @@ IFS='|' read -r RUNTIME TYPE VERSION <<< "$CHOIX"
 UDID=$(xcrun simctl create "test-safari" "$TYPE" "$RUNTIME") || { dit "NON VÉRIFIABLE : création de l'iPhone refusée"; exit 2; }
 dit "iPhone : $MODELE · iOS $VERSION · $UDID"
 xcrun simctl boot "$UDID" || { dit "NON VÉRIFIABLE : l'iPhone ne démarre pas"; exit 2; }
-xcrun simctl bootstatus "$UDID" -b > /dev/null
+borne 600 xcrun simctl bootstatus "$UDID" -b > /dev/null || dit "démarrage : bootstatus ne répond pas en 600 s"
 xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 2>/dev/null || true
 sleep 5
 
-capture() { xcrun simctl io "$UDID" screenshot --type=png "$SORTIE/$1.png" > /dev/null 2>&1 && dit "capture $1" || dit "capture $1 RATÉE"; }
+# borne <secondes> <commande…> : une commande bloquée ne fige plus tout le test (le 27/10, deux iPhone
+# ont dépassé 30 min sans dire où). macOS n'a pas « timeout » : perl + alarm fait la même chose.
+borne() { local s=$1; shift; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; }
+DEBUT_PARCOURS=$(date +%s)
+ecoule() { echo $(( $(date +%s) - DEBUT_PARCOURS )); }
+
+capture() { borne 30 xcrun simctl io "$UDID" screenshot --type=png "$SORTIE/$1.png" > /dev/null 2>&1 && dit "capture $1" || dit "capture $1 RATÉE"; }
 
 # 3. Préchauffage : le TOUT PREMIER lancement de Safari sur un iPhone neuf a pris 8 minutes
 #    (mesuré le 27/10). On le fait AVANT de filmer, sinon la vidéo est 8 minutes d'attente (240 Mo).
 debut=$(date +%s)
-xcrun simctl launch "$UDID" com.apple.mobilesafari > /dev/null 2>&1 || true
+borne 600 xcrun simctl launch "$UDID" com.apple.mobilesafari > /dev/null 2>&1 || dit "préchauffage : Safari ne répond pas en 600 s"
 sleep 10
 dit "Safari préchauffé en $(( $(date +%s) - debut )) s"
 
@@ -68,24 +74,28 @@ sleep 3
 
 # 5. Ouverture dans Safari, puis on laisse la page et sa vidéo d'accueil se charger.
 debut=$(date +%s)
-xcrun simctl openurl "$UDID" "$ADRESSE"
+borne 300 xcrun simctl openurl "$UDID" "$ADRESSE" || dit "ouverture : pas de réponse en 300 s"
 dit "ouverture de la page : $(( $(date +%s) - debut )) s"
 sleep 20
 capture "01-accueil"
 # Au premier lancement, Safari 26 pose une bulle « View Bookmarks… » par-dessus la page :
 # un toucher la ferme (si idb est là) ; sinon une capture propre est refaite à la fin.
-if command -v idb > /dev/null 2>&1 && idb connect "$UDID" > /dev/null 2>&1; then
-  idb ui tap 190 120 --udid "$UDID" > /dev/null 2>&1 && sleep 2
+if command -v idb > /dev/null 2>&1 && borne 30 idb connect "$UDID" > /dev/null 2>&1; then
+  borne 15 idb ui tap 190 120 --udid "$UDID" > /dev/null 2>&1 && sleep 2
 fi
 
 # 6. Défilement au DOIGT simulé (idb envoie de vrais événements tactiles à iOS).
 n=2
-if command -v idb > /dev/null 2>&1 && idb connect "$UDID" > /dev/null 2>&1; then
+if command -v idb > /dev/null 2>&1 && borne 30 idb connect "$UDID" > /dev/null 2>&1; then
   dit "défilement au doigt : idb prêt"
   for i in $(seq 1 40); do
-    if ! idb ui swipe 190 520 190 170 --duration 0.5 --udid "$UDID" > /dev/null 2>&1; then
-      dit "glissé $i refusé par idb : arrêt du défilement"; break
+    # Budget : on ne laisse pas le défilement manger le temps des sections.
+    if [ "$(ecoule)" -gt 900 ]; then dit "défilement arrêté au glissé $i : budget de 15 min atteint"; break; fi
+    t0=$(date +%s)
+    if ! borne 20 idb ui swipe 190 520 190 170 --duration 0.5 --udid "$UDID" > /dev/null 2>&1; then
+      dit "glissé $i refusé ou bloqué ($(( $(date +%s) - t0 )) s) : arrêt du défilement"; break
     fi
+    [ "$i" = 1 ] && dit "premier glissé : $(( $(date +%s) - t0 )) s"
     sleep 1.5
     if [ $((i % 4)) -eq 0 ]; then capture "$(printf '%02d' $n)-defilement-$i"; n=$((n + 1)); fi
   done
@@ -95,20 +105,21 @@ fi
 
 # 7. Chaque section de la page, par son ancre (#id) : rendu de chaque chapitre, même sans idb.
 ANCRES=$(curl -fsSL --max-time 30 "$ADRESSE" | grep -oE '<section[^>]* id="[^"]+"' | sed -E 's/.* id="([^"]+)".*/\1/' | head -15)
+dit "sections : début à $(ecoule) s"
 for ancre in $ANCRES; do
-  xcrun simctl openurl "$UDID" "${ADRESSE%/}/#$ancre"
+  borne 60 xcrun simctl openurl "$UDID" "${ADRESSE%/}/#$ancre"
   sleep 6
   capture "$(printf '%02d' $n)-section-$ancre"; n=$((n + 1))
 done
 
 # Retour en haut : l'accueil SANS la bulle de premier lancement.
-xcrun simctl openurl "$UDID" "${ADRESSE%/}/#"
+borne 60 xcrun simctl openurl "$UDID" "${ADRESSE%/}/#"
 sleep 8
 capture "$(printf '%02d' $n)-accueil-final"
 
 kill -INT "$VIDEO" 2> /dev/null; wait "$VIDEO" 2> /dev/null
 # La vidéo brute fait ~20 Mo par minute : on la réduit avec l'outil intégré à macOS.
-if [ -s "$SORTIE/parcours-brut.mp4" ] && avconvert --source "$SORTIE/parcours-brut.mp4" --preset Preset960x540 \
+if [ -s "$SORTIE/parcours-brut.mp4" ] && borne 300 avconvert --source "$SORTIE/parcours-brut.mp4" --preset Preset960x540 \
      --output "$SORTIE/parcours.mp4" --replace > /dev/null 2>&1 && [ -s "$SORTIE/parcours.mp4" ]; then
   rm -f "$SORTIE/parcours-brut.mp4"
 else

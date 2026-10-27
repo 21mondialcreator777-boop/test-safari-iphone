@@ -20,11 +20,14 @@ JOURNAL="$SORTIE/journal.txt"
 dit() { echo "[$(date +%T)] $*" | tee -a "$JOURNAL"; }
 
 # 1. Le runtime iOS le plus récent qui sait faire tourner ce modèle (avec l'Xcode choisi).
-CHOIX=$(python3 - "$MODELE" <<'PY'
+# IOS (variable, ex. « 18 ») impose la version : les runtimes sont PARTAGÉS entre les Xcode, donc
+# choisir Xcode 16.4 ne suffit pas — le 27/10 l'« iPhone 16 iOS 18 » a tourné sous iOS 26.2.
+CHOIX=$(python3 - "$MODELE" "${IOS:-}" <<'PY'
 import json, subprocess, sys
-modele = sys.argv[1]
+modele, voulu = sys.argv[1], sys.argv[2]
 runtimes = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "runtimes", "-j"]))["runtimes"]
-ios = [r for r in runtimes if r.get("platform") == "iOS" and r.get("isAvailable")]
+ios = [r for r in runtimes if r.get("platform") == "iOS" and r.get("isAvailable")
+       and (not voulu or r["version"].split(".")[0] == voulu)]
 ios.sort(key=lambda r: [int(x) for x in r["version"].split(".")], reverse=True)
 for r in ios:
     for d in r.get("supportedDeviceTypes", []):
@@ -34,7 +37,8 @@ for r in ios:
 PY
 )
 if [ -z "$CHOIX" ]; then
-  dit "NON VÉRIFIABLE : « $MODELE » n'existe dans aucun runtime iOS de cet Xcode. Modèles disponibles :"
+  dit "NON VÉRIFIABLE : « $MODELE » n'existe dans aucun runtime iOS ${IOS:-} de cet Xcode. Runtimes et modèles :"
+  xcrun simctl list runtimes | tee -a "$JOURNAL"
   xcrun simctl list devicetypes | grep -i iphone | tee -a "$JOURNAL"
   exit 2
 fi

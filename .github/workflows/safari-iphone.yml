@@ -29,6 +29,7 @@ jobs:
       # L'adresse passe par une variable, jamais collée dans le script (injection).
       ADRESSE: ${{ inputs.adresse }}
       MODELE: ${{ matrix.modele }}
+      IOS: ${{ matrix.ios }}
     steps:
       - uses: actions/checkout@v4
 

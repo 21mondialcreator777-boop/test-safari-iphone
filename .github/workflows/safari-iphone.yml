@@ -33,15 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Choisir Xcode ${{ matrix.xcode }}
-        run: |
-          ls -d /Applications/Xcode*.app
-          sudo xcode-select -s "/Applications/Xcode_${{ matrix.xcode }}.app"
-          xcodebuild -version
-
+      # idb-companion EXIGE Xcode 26 (« An unsatisfied requirement failed this build » sous 16.4, le 27/10) :
+      # on l'installe sous Xcode 26.2, PUIS on choisit l'Xcode du test.
       - name: Installer idb (glissés au doigt)
         continue-on-error: true
         run: |
+          sudo xcode-select -s /Applications/Xcode_26.2.app
           brew tap facebook/fb
           # Homebrew 6 refuse une formule d'un dépôt tiers non approuvé (« untrusted tap ») :
           # on approuve CETTE formule seulement, pas tout le dépôt.
@@ -49,6 +46,12 @@ jobs:
           brew install idb-companion
           pipx install fb-idb
           pipx ensurepath
+
+      - name: Choisir Xcode ${{ matrix.xcode }}
+        run: |
+          ls -d /Applications/Xcode*.app
+          sudo xcode-select -s "/Applications/Xcode_${{ matrix.xcode }}.app"
+          xcodebuild -version
 
       - name: Ouvrir le site dans Safari
         run: |

@@ -18,6 +18,10 @@ ADRESSE="$1"; MODELE="$2"; SORTIE="$3"
 mkdir -p "$SORTIE"
 JOURNAL="$SORTIE/journal.txt"
 dit() { echo "[$(date +%T)] $*" | tee -a "$JOURNAL"; }
+# borne <secondes> <commande…> : une commande bloquée ne fige plus tout le test (le 27/10, deux iPhone
+# ont dépassé 30 min sans dire où). macOS n'a pas « timeout » : perl + alarm fait la même chose.
+# Définie EN TÊTE : le 27/10 elle l'était après son 1er usage (bootstatus rendait 127, « introuvable »).
+borne() { local s=$1; shift; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; }
 
 # 1. Le runtime iOS le plus récent qui sait faire tourner ce modèle (avec l'Xcode choisi).
 # IOS (variable, ex. « 18 ») impose la version : les runtimes sont PARTAGÉS entre les Xcode, donc
@@ -53,9 +57,6 @@ borne 600 xcrun simctl bootstatus "$UDID" -b > /dev/null 2>&1; code=$?
 xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 2>/dev/null || true
 sleep 5
 
-# borne <secondes> <commande…> : une commande bloquée ne fige plus tout le test (le 27/10, deux iPhone
-# ont dépassé 30 min sans dire où). macOS n'a pas « timeout » : perl + alarm fait la même chose.
-borne() { local s=$1; shift; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; }
 DEBUT_PARCOURS=$(date +%s)
 ecoule() { echo $(( $(date +%s) - DEBUT_PARCOURS )); }
 
@@ -113,9 +114,10 @@ if [ "$IDB_OK" = 1 ]; then
     # Budget : on ne laisse pas le défilement manger le temps des sections.
     if [ "$(ecoule)" -gt 900 ]; then dit "défilement arrêté au glissé $i : budget de 15 min atteint"; break; fi
     t0=$(date +%s)
-    if ! borne 20 idb ui swipe 190 520 190 170 --duration 0.5 > "$SORTIE/idb-glisse.txt" 2>&1; then
-      dit "glissé $i refusé ou bloqué ($(( $(date +%s) - t0 )) s) : $(tail -c 200 "$SORTIE/idb-glisse.txt" | tr '
-' ' ')"; break
+    # --delta 50 : 7 pas au lieu de 35. Chaque pas prend ~0,4 s sur ces Mac : le geste de 35 pas dépassait
+    # 20 s et était coupé (« hid failed … CancellationError »), alors que les touches arrivaient bien à iOS.
+    if ! borne 45 idb ui swipe 190 520 190 170 --delta 50 --duration 0.5 > "$SORTIE/idb-glisse.txt" 2>&1; then
+      dit "glissé $i refusé ou bloqué ($(( $(date +%s) - t0 )) s) : $(tail -c 200 "$SORTIE/idb-glisse.txt" | tr '\n' ' ')"; break
     fi
     [ "$i" = 1 ] && dit "premier glissé : $(( $(date +%s) - t0 )) s"
     sleep 1.5
@@ -140,13 +142,9 @@ sleep 8
 capture "$(printf '%02d' $n)-accueil-final"
 
 kill -INT "$VIDEO" 2> /dev/null; wait "$VIDEO" 2> /dev/null
-# La vidéo brute fait ~20 Mo par minute : on la réduit avec l'outil intégré à macOS.
-if [ -s "$SORTIE/parcours-brut.mp4" ] && borne 300 avconvert --source "$SORTIE/parcours-brut.mp4" --preset Preset960x540 \
-     --output "$SORTIE/parcours.mp4" --replace > /dev/null 2>&1 && [ -s "$SORTIE/parcours.mp4" ]; then
-  rm -f "$SORTIE/parcours-brut.mp4"
-else
-  mv -f "$SORTIE/parcours-brut.mp4" "$SORTIE/parcours.mp4" 2> /dev/null
-fi
+# Vidéo brute gardée telle quelle : `avconvert` a échoué deux fois (5 à 11 min perdues pour rien).
+# Elle part dans son propre paquet, non rapatrié par défaut.
+mv -f "$SORTIE/parcours-brut.mp4" "$SORTIE/parcours.mp4" 2> /dev/null
 [ -s "$SORTIE/parcours.mp4" ] && dit "vidéo : $(du -h "$SORTIE/parcours.mp4" | cut -f1)" || dit "vidéo ABSENTE"
 
 # 8. Planche contact : une page qui montre toutes les captures dans l'ordre.

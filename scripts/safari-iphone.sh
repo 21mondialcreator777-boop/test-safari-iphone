@@ -50,17 +50,31 @@ sleep 5
 
 capture() { xcrun simctl io "$UDID" screenshot --type=png "$SORTIE/$1.png" > /dev/null 2>&1 && dit "capture $1" || dit "capture $1 RATÉE"; }
 
-# 3. Vidéo de tout le parcours (arrêtée proprement par SIGINT, sinon le fichier est illisible).
-xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$SORTIE/parcours.mp4" > /dev/null 2>&1 &
+# 3. Préchauffage : le TOUT PREMIER lancement de Safari sur un iPhone neuf a pris 8 minutes
+#    (mesuré le 27/10). On le fait AVANT de filmer, sinon la vidéo est 8 minutes d'attente (240 Mo).
+debut=$(date +%s)
+xcrun simctl launch "$UDID" com.apple.mobilesafari > /dev/null 2>&1 || true
+sleep 10
+dit "Safari préchauffé en $(( $(date +%s) - debut )) s"
+
+# 4. Vidéo de tout le parcours (arrêtée proprement par SIGINT, sinon le fichier est illisible).
+xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$SORTIE/parcours-brut.mp4" > /dev/null 2>&1 &
 VIDEO=$!
 sleep 3
 
-# 4. Ouverture dans Safari, puis on laisse la page et sa vidéo d'accueil se charger.
+# 5. Ouverture dans Safari, puis on laisse la page et sa vidéo d'accueil se charger.
+debut=$(date +%s)
 xcrun simctl openurl "$UDID" "$ADRESSE"
+dit "ouverture de la page : $(( $(date +%s) - debut )) s"
 sleep 20
 capture "01-accueil"
+# Au premier lancement, Safari 26 pose une bulle « View Bookmarks… » par-dessus la page :
+# un toucher la ferme (si idb est là) ; sinon une capture propre est refaite à la fin.
+if command -v idb > /dev/null 2>&1 && idb connect "$UDID" > /dev/null 2>&1; then
+  idb ui tap 190 120 --udid "$UDID" > /dev/null 2>&1 && sleep 2
+fi
 
-# 5. Défilement au DOIGT simulé (idb envoie de vrais événements tactiles à iOS).
+# 6. Défilement au DOIGT simulé (idb envoie de vrais événements tactiles à iOS).
 n=2
 if command -v idb > /dev/null 2>&1 && idb connect "$UDID" > /dev/null 2>&1; then
   dit "défilement au doigt : idb prêt"
@@ -75,7 +89,7 @@ else
   dit "idb indisponible : pas de défilement au doigt (les sections sont quand même visitées par leurs ancres)"
 fi
 
-# 6. Chaque section de la page, par son ancre (#id) : rendu de chaque chapitre, même sans idb.
+# 7. Chaque section de la page, par son ancre (#id) : rendu de chaque chapitre, même sans idb.
 ANCRES=$(curl -fsSL --max-time 30 "$ADRESSE" | grep -oE '<section[^>]* id="[^"]+"' | sed -E 's/.* id="([^"]+)".*/\1/' | head -15)
 for ancre in $ANCRES; do
   xcrun simctl openurl "$UDID" "${ADRESSE%/}/#$ancre"
@@ -83,10 +97,22 @@ for ancre in $ANCRES; do
   capture "$(printf '%02d' $n)-section-$ancre"; n=$((n + 1))
 done
 
+# Retour en haut : l'accueil SANS la bulle de premier lancement.
+xcrun simctl openurl "$UDID" "${ADRESSE%/}/#"
+sleep 8
+capture "$(printf '%02d' $n)-accueil-final"
+
 kill -INT "$VIDEO" 2> /dev/null; wait "$VIDEO" 2> /dev/null
+# La vidéo brute fait ~20 Mo par minute : on la réduit avec l'outil intégré à macOS.
+if [ -s "$SORTIE/parcours-brut.mp4" ] && avconvert --source "$SORTIE/parcours-brut.mp4" --preset Preset960x540 \
+     --output "$SORTIE/parcours.mp4" --replace > /dev/null 2>&1 && [ -s "$SORTIE/parcours.mp4" ]; then
+  rm -f "$SORTIE/parcours-brut.mp4"
+else
+  mv -f "$SORTIE/parcours-brut.mp4" "$SORTIE/parcours.mp4" 2> /dev/null
+fi
 [ -s "$SORTIE/parcours.mp4" ] && dit "vidéo : $(du -h "$SORTIE/parcours.mp4" | cut -f1)" || dit "vidéo ABSENTE"
 
-# 7. Planche contact : une page qui montre toutes les captures dans l'ordre.
+# 8. Planche contact : une page qui montre toutes les captures dans l'ordre.
 {
   echo "<!doctype html><meta charset=utf-8><title>Safari $MODELE iOS $VERSION</title>"
   echo "<style>body{font:14px system-ui;background:#111;color:#eee;margin:16px}figure{display:inline-block;margin:8px;vertical-align:top}img{width:260px;border:1px solid #444}</style>"

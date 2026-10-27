@@ -42,6 +42,9 @@ jobs:
         continue-on-error: true
         run: |
           brew tap facebook/fb
+          # Homebrew 6 refuse une formule d'un dépôt tiers non approuvé (« untrusted tap ») :
+          # on approuve CETTE formule seulement, pas tout le dépôt.
+          brew trust --formula facebook/fb/idb-companion
           brew install idb-companion
           pipx install fb-idb
           pipx ensurepath

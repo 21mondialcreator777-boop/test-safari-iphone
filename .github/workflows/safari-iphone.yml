@@ -1,0 +1,60 @@
+# Ouvre un site dans le vrai Safari d'iPhones simulés (Mac de GitHub, gratuit sur dépôt public)
+# et rapporte captures + vidéo. Lancement : onglet Actions › « Safari iPhone » › Run workflow.
+name: Safari iPhone
+
+on:
+  workflow_dispatch:
+    inputs:
+      adresse:
+        description: "Adresse du site à tester"
+        required: true
+        default: "https://amethystelove974.com"
+
+permissions:
+  contents: read
+
+jobs:
+  safari:
+    name: ${{ matrix.modele }} · iOS ${{ matrix.ios }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { modele: "iPhone 17", xcode: "26.2", ios: "26" }
+          - { modele: "iPhone SE (3rd generation)", xcode: "26.2", ios: "26" }
+          - { modele: "iPhone 16", xcode: "16.4", ios: "18" }
+    env:
+      # L'adresse passe par une variable, jamais collée dans le script (injection).
+      ADRESSE: ${{ inputs.adresse }}
+      MODELE: ${{ matrix.modele }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Choisir Xcode ${{ matrix.xcode }}
+        run: |
+          ls -d /Applications/Xcode*.app
+          sudo xcode-select -s "/Applications/Xcode_${{ matrix.xcode }}.app"
+          xcodebuild -version
+
+      - name: Installer idb (glissés au doigt)
+        continue-on-error: true
+        run: |
+          brew tap facebook/fb
+          brew install idb-companion
+          pipx install fb-idb
+          pipx ensurepath
+
+      - name: Ouvrir le site dans Safari
+        run: |
+          export PATH="$PATH:$HOME/.local/bin"
+          bash scripts/safari-iphone.sh "$ADRESSE" "$MODELE" sortie
+
+      - name: Rapporter captures et vidéo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safari-${{ strategy.job-index }}-ios${{ matrix.ios }}
+          path: sortie
+          retention-days: 14

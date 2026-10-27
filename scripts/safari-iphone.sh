@@ -48,7 +48,8 @@ IFS='|' read -r RUNTIME TYPE VERSION <<< "$CHOIX"
 UDID=$(xcrun simctl create "test-safari" "$TYPE" "$RUNTIME") || { dit "NON VÉRIFIABLE : création de l'iPhone refusée"; exit 2; }
 dit "iPhone : $MODELE · iOS $VERSION · $UDID"
 xcrun simctl boot "$UDID" || { dit "NON VÉRIFIABLE : l'iPhone ne démarre pas"; exit 2; }
-borne 600 xcrun simctl bootstatus "$UDID" -b > /dev/null || dit "démarrage : bootstatus ne répond pas en 600 s"
+borne 600 xcrun simctl bootstatus "$UDID" -b > /dev/null 2>&1; code=$?
+[ "$code" = 0 ] || dit "démarrage : bootstatus rend le code $code (142 = délai de 600 s dépassé)"
 xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 2>/dev/null || true
 sleep 5
 
@@ -58,7 +59,12 @@ borne() { local s=$1; shift; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; }
 DEBUT_PARCOURS=$(date +%s)
 ecoule() { echo $(( $(date +%s) - DEBUT_PARCOURS )); }
 
-capture() { borne 30 xcrun simctl io "$UDID" screenshot --type=png "$SORTIE/$1.png" > /dev/null 2>&1 && dit "capture $1" || dit "capture $1 RATÉE"; }
+# Le 27/10, 30 s ne suffisaient pas quand le simulateur charge une vidéo : 90 s, et un second essai.
+capture() {
+  borne 90 xcrun simctl io "$UDID" screenshot --type=png "$SORTIE/$1.png" > /dev/null 2>&1 && { dit "capture $1"; return; }
+  sleep 5
+  borne 90 xcrun simctl io "$UDID" screenshot --type=png "$SORTIE/$1.png" > /dev/null 2>&1 && dit "capture $1 (2e essai)" || dit "capture $1 RATÉE"
+}
 
 # 3. Préchauffage : le TOUT PREMIER lancement de Safari sur un iPhone neuf a pris 8 minutes
 #    (mesuré le 27/10). On le fait AVANT de filmer, sinon la vidéo est 8 minutes d'attente (240 Mo).

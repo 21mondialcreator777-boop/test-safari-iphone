@@ -84,29 +84,45 @@ borne 300 xcrun simctl openurl "$UDID" "$ADRESSE" || dit "ouverture : pas de ré
 dit "ouverture de la page : $(( $(date +%s) - debut )) s"
 sleep 20
 capture "01-accueil"
-# Au premier lancement, Safari 26 pose une bulle « View Bookmarks… » par-dessus la page :
-# un toucher la ferme (si idb est là) ; sinon une capture propre est refaite à la fin.
-if command -v idb > /dev/null 2>&1 && borne 30 idb connect "$UDID" > /dev/null 2>&1; then
-  borne 15 idb ui tap 190 120 --udid "$UDID" > /dev/null 2>&1 && sleep 2
+# idb : le COMPAGNON doit être lancé à la main pour CET iPhone, puis le client lui parle sur
+# localhost:10882 (doc fbidb). Le 27/10, `idb connect <udid>` seul échouait sans rien dire.
+IDB_OK=0
+if command -v idb > /dev/null 2>&1 && command -v idb_companion > /dev/null 2>&1; then
+  idb_companion --udid "$UDID" > "$SORTIE/idb-compagnon.log" 2>&1 &
+  for _ in $(seq 1 30); do nc -z localhost 10882 2> /dev/null && break; sleep 2; done
+  export IDB_COMPANION=localhost:10882
+  if borne 30 idb describe > "$SORTIE/idb-describe.txt" 2>&1; then
+    IDB_OK=1; dit "idb : compagnon prêt sur localhost:10882"
+  else
+    dit "idb : le compagnon ne répond pas — $(tail -c 300 "$SORTIE/idb-describe.txt" | tr '
+' ' ')"
+    dit "idb : journal du compagnon — $(tail -c 300 "$SORTIE/idb-compagnon.log" | tr '
+' ' ')"
+  fi
+else
+  dit "idb : non installé (idb=$(command -v idb || echo absent), idb_companion=$(command -v idb_companion || echo absent))"
 fi
+# Au premier lancement, Safari 26 pose une bulle « View Bookmarks… » par-dessus la page : un toucher la ferme.
+[ "$IDB_OK" = 1 ] && borne 15 idb ui tap 190 120 > /dev/null 2>&1 && sleep 2
 
 # 6. Défilement au DOIGT simulé (idb envoie de vrais événements tactiles à iOS).
 n=2
-if command -v idb > /dev/null 2>&1 && borne 30 idb connect "$UDID" > /dev/null 2>&1; then
+if [ "$IDB_OK" = 1 ]; then
   dit "défilement au doigt : idb prêt"
   for i in $(seq 1 40); do
     # Budget : on ne laisse pas le défilement manger le temps des sections.
     if [ "$(ecoule)" -gt 900 ]; then dit "défilement arrêté au glissé $i : budget de 15 min atteint"; break; fi
     t0=$(date +%s)
-    if ! borne 20 idb ui swipe 190 520 190 170 --duration 0.5 --udid "$UDID" > /dev/null 2>&1; then
-      dit "glissé $i refusé ou bloqué ($(( $(date +%s) - t0 )) s) : arrêt du défilement"; break
+    if ! borne 20 idb ui swipe 190 520 190 170 --duration 0.5 > "$SORTIE/idb-glisse.txt" 2>&1; then
+      dit "glissé $i refusé ou bloqué ($(( $(date +%s) - t0 )) s) : $(tail -c 200 "$SORTIE/idb-glisse.txt" | tr '
+' ' ')"; break
     fi
     [ "$i" = 1 ] && dit "premier glissé : $(( $(date +%s) - t0 )) s"
     sleep 1.5
     if [ $((i % 4)) -eq 0 ]; then capture "$(printf '%02d' $n)-defilement-$i"; n=$((n + 1)); fi
   done
 else
-  dit "idb indisponible : pas de défilement au doigt (les sections sont quand même visitées par leurs ancres)"
+  dit "pas de défilement au doigt (idb indisponible, voir plus haut) : sections visitées par leurs ancres"
 fi
 
 # 7. Chaque section de la page, par son ancre (#id) : rendu de chaque chapitre, même sans idb.
@@ -141,5 +157,6 @@ fi
   for f in "$SORTIE"/*.png; do b=$(basename "$f"); echo "<figure><img src=\"$b\"><figcaption>$b</figcaption></figure>"; done
 } > "$SORTIE/index.html"
 dit "fin : $(ls "$SORTIE"/*.png 2> /dev/null | wc -l) captures"
+pkill -f "idb_companion --udid $UDID" 2> /dev/null || true
 xcrun simctl shutdown "$UDID" > /dev/null 2>&1 || true
 exit 0

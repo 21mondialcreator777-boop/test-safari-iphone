@@ -65,6 +65,7 @@ jobs:
             sortie/*.png
             sortie/index.html
             sortie/journal.txt
+            sortie/idb-*
           retention-days: 14
 
       - name: Rapporter la vidéo

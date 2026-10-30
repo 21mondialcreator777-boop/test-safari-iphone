@@ -1,0 +1,41 @@
+name: Verifier la rotation transparente dans Safari iOS
+on:
+  workflow_dispatch:
+    inputs:
+      module_b64:
+        description: Module a tester, base64 (jamais imprime)
+        required: true
+permissions:
+  contents: read
+jobs:
+  rotation:
+    runs-on: macos-15
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { modele: 'iPhone 17', xcode: '26.2', ios: '26' }
+          - { modele: 'iPhone 16', xcode: '16.4', ios: '18' }
+    env:
+      MODULE_B64: ${{ inputs.module_b64 }}
+      GH_TOKEN: ${{ github.token }}
+      MODELE: ${{ matrix.modele }}
+      IOS: ${{ matrix.ios }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recuperer le media Apple deja verifie
+        run: gh run download 41114088067 --repo "$GITHUB_REPOSITORY" --name video-safari-alpha --dir media
+      - name: Choisir Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${{ matrix.xcode }}.app"
+      - name: Comparer le site public et sa copie corrigee
+        run: |
+          mkdir -p sortie
+          python3 scripts/proxy-rotation.py > sortie/proxy.log 2>&1 &
+          bash scripts/rotation-safari.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rotation-ios${{ matrix.ios }}
+          path: sortie/
+          retention-days: 14

@@ -18,12 +18,27 @@ jobs:
           - { modele: 'iPhone 17', xcode: '26.2', ios: '26' }
           - { modele: 'iPhone 16', xcode: '16.4', ios: '18' }
     env:
-      MODULE_B64: ${{ inputs.module_b64 }}
       GH_TOKEN: ${{ github.token }}
       MODELE: ${{ matrix.modele }}
       IOS: ${{ matrix.ios }}
     steps:
       - uses: actions/checkout@v4
+      - name: Charger le candidat sans exposer son contenu dans les journaux
+        run: |
+          python3 - <<'PY'
+          import json,os
+          value=json.load(open(os.environ['GITHUB_EVENT_PATH']))['inputs']['module_b64']
+          print('::add-mask::'+value)
+          with open(os.environ['GITHUB_ENV'],'a') as out: out.write('MODULE_B64='+value+'\n')
+          PY
+      - name: Installer le geste tactile pour fermer la bulle Safari 26
+        if: matrix.ios == '26'
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.2.app
+          brew tap facebook/fb
+          brew trust --formula facebook/fb/idb-companion
+          brew install idb-companion
+          pipx install fb-idb
       - name: Recuperer le media Apple deja verifie
         run: gh run download 41114088067 --repo "$GITHUB_REPOSITORY" --name video-safari-alpha --dir media
       - name: Choisir Xcode
@@ -31,6 +46,7 @@ jobs:
       - name: Comparer le site public et sa copie corrigee
         run: |
           mkdir -p sortie
+          export PATH="$PATH:$HOME/.local/bin"
           python3 scripts/proxy-rotation.py > sortie/proxy.log 2>&1 &
           bash scripts/rotation-safari.sh
       - uses: actions/upload-artifact@v4

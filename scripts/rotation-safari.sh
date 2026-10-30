@@ -19,9 +19,25 @@ borne 600 xcrun simctl bootstatus "$UDID" -b > /dev/null
 borne 600 xcrun simctl launch "$UDID" com.apple.mobilesafari > /dev/null
 sleep 10
 xcrun simctl status_bar "$UDID" override --time '9:41' --batteryState charged --batteryLevel 100 || true
-for PORT in 8765 8766; do
+IDB_OK=0
+if command -v idb_companion > /dev/null && command -v idb > /dev/null; then
+ idb_companion --udid "$UDID" > sortie/idb.log 2>&1 &
+ export IDB_COMPANION=localhost:10882
+ for _ in $(seq 1 30); do nc -z localhost 10882 2>/dev/null && break; sleep 2; done
+ borne 30 idb describe > sortie/idb-description.txt 2>&1 && IDB_OK=1
+fi
+# Candidate first: Safari 26 can leave the initial tutorial bubble active and
+# ignore the second external openurl. Each origin must actually send evidence.
+for PORT in 8766 8765; do
   borne 180 xcrun simctl openurl "$UDID" "http://127.0.0.1:$PORT/prestations/index.html"
-  sleep 35
+  sleep 20
+  if [ "$IDB_OK" = 1 ]; then borne 30 idb ui tap 190 120 > /dev/null; fi
+  for _ in $(seq 1 6); do
+    [ -f "sortie/proof-$PORT.ndjson" ] && break
+    borne 180 xcrun simctl openurl "$UDID" "http://127.0.0.1:$PORT/prestations/index.html"
+    sleep 10
+  done
+  sleep 20
   for IMAGE in 1 2 3; do
     borne 90 xcrun simctl io "$UDID" screenshot --type=png "sortie/$PORT-$IMAGE.png"
     sleep 3

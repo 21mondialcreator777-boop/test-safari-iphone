@@ -53,6 +53,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             data=file.read_bytes(); mime=meta.read_text()
             if 'text/html' in mime:
                 data=data.replace(b'</body>',b'<script type="module" src="/__audit.js"></script></body>')
+                if fixed:
+                    data=data.replace(b'<script type="module" src="js/main.js">',b'<script type="importmap">{"imports":{"./js/keycap-estimation.js":"./js/keycap-estimation.js?v=20261030-iphone"}}</script><script type="module" src="js/main.js">')
             # Give the decoder a composited frame during the alpha probe; opacity:0
             # can suppress video presentation callbacks. Only in candidate copy.
             if fixed and path.endswith('.css'):

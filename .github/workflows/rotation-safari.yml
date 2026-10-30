@@ -5,6 +5,10 @@ on:
       module_b64:
         description: Module a tester, base64 (jamais imprime)
         required: true
+      ios26_only:
+        description: Reprendre uniquement iOS 26
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -14,9 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { modele: 'iPhone 17', xcode: '26.2', ios: '26' }
-          - { modele: 'iPhone 16', xcode: '16.4', ios: '18' }
+        include: ${{ fromJSON(inputs.ios26_only && '[{"modele":"iPhone 17","xcode":"26.2","ios":"26"}]' || '[{"modele":"iPhone 17","xcode":"26.2","ios":"26"},{"modele":"iPhone 16","xcode":"16.4","ios":"18"}]') }}
     env:
       GH_TOKEN: ${{ github.token }}
       MODELE: ${{ matrix.modele }}

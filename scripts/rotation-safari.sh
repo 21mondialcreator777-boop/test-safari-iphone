@@ -31,7 +31,7 @@ fi
 for PORT in 8766 8765; do
   borne 180 xcrun simctl openurl "$UDID" "http://127.0.0.1:$PORT/prestations/index.html"
   sleep 20
-  if [ "$IDB_OK" = 1 ]; then borne 30 idb ui tap 190 120 > /dev/null; fi
+  if [ "$IDB_OK" = 1 ]; then borne 30 idb ui tap 190 120 > /dev/null || echo 'Tutorial dismiss gesture timed out; continue with actual frame evidence'; fi
   for _ in $(seq 1 6); do
     [ -f "sortie/proof-$PORT.ndjson" ] && break
     borne 180 xcrun simctl openurl "$UDID" "http://127.0.0.1:$PORT/prestations/index.html"

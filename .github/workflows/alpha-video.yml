@@ -1,0 +1,29 @@
+name: Encoder une video transparente pour Safari
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  encoder:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decoder la video publique avec son canal alpha
+        run: |
+          command -v ffmpeg || brew install ffmpeg
+          mkdir -p sortie-alpha
+          curl --fail --location --proto '=https' https://parisimmo.re/prestations/img/glass-water/touche-estimation-360.webm -o sortie-alpha/source.webm
+          ffmpeg -hide_banner -loglevel error -c:v libvpx-vp9 -i sortie-alpha/source.webm -an -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le sortie-alpha/source.mov
+      - name: Encoder et verifier HEVC alpha avec AVFoundation
+        run: swift scripts/encoder-alpha.swift sortie-alpha/source.mov sortie-alpha/touche-estimation-360-safari.mov
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-safari-alpha
+          path: |
+            sortie-alpha/touche-estimation-360-safari.mov
+            sortie-alpha/verification.json
+          retention-days: 14

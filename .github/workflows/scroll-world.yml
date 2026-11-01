@@ -1,0 +1,53 @@
+name: Verifier le film au defilement dans Safari iOS
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_b64:
+        description: Modules client candidats JSON/base64, sans secret
+        required: true
+permissions:
+  contents: read
+jobs:
+  scroll:
+    runs-on: macos-15
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { modele: 'iPhone 16', xcode: '16.4', ios: '18' }
+          - { modele: 'iPhone 17', xcode: '26.2', ios: '26' }
+    env:
+      MODELE: ${{ matrix.modele }}
+      IOS: ${{ matrix.ios }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Charger les modules sans les imprimer
+        run: |
+          python3 - <<'PY'
+          import json,os
+          value=json.load(open(os.environ['GITHUB_EVENT_PATH']))['inputs']['candidate_b64']
+          print('::add-mask::'+value)
+          with open(os.environ['GITHUB_ENV'],'a') as out: out.write('CANDIDATE_B64='+value+'\n')
+          PY
+      - name: Installer le geste tactile
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.2.app
+          brew tap facebook/fb
+          brew trust --formula facebook/fb/idb-companion
+          brew install idb-companion
+          pipx install fb-idb
+      - name: Choisir Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${{ matrix.xcode }}.app"
+      - name: Defiler dans le vrai iframe du site public copie localement
+        run: |
+          export PATH="$PATH:$HOME/.local/bin"
+          mkdir -p sortie-scroll
+          python3 scripts/proxy-scroll.py > sortie-scroll/proxy.log 2>&1 &
+          bash scripts/scroll-world.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scroll-ios${{ matrix.ios }}
+          path: sortie-scroll/
+          retention-days: 14

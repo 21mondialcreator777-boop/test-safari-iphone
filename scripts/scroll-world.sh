@@ -43,6 +43,8 @@ for PORT in 8766 8765;do
  sleep 5
  borne 90 xcrun simctl io "$UDID" screenshot --type=png "sortie-scroll/$PORT-after.png"
  if [ "$PORT" = 8766 ];then
+  echo play >"sortie-scroll/phase-$PORT"
+  sleep 2
   echo pause >"sortie-scroll/phase-$PORT"
   sleep 3
   borne 90 xcrun simctl io "$UDID" screenshot --type=png "sortie-scroll/$PORT-pause.png"

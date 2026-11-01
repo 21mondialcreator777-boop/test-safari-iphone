@@ -30,7 +30,7 @@ let phase='';
 // Synthetic control clicks are labelled; the eight pans below remain native idb gestures.
 setInterval(async()=>{
  try{
-  const next=await (await fetch('/__phase')).text();if(!next||next===phase)return;phase=next;
+  const next=(await (await fetch('/__phase')).text()).trim();if(!next||next===phase)return;phase=next;
   const b=document.querySelector('[data-film-play]');if(!b)return;
   const state=window.PIFILM?.diagnostic()?.lecture;
   if(next==='pause'){if(state&&!state.pause&&state.cible>window.PIFILM.diagnostic().t)b.click();}

@@ -20,7 +20,11 @@ borne 600 xcrun simctl launch "$UDID" com.apple.mobilesafari >/dev/null
 idb_companion --udid "$UDID" >sortie-scroll/idb.log 2>&1 &
 export IDB_COMPANION=localhost:10882
 for _ in $(seq 1 30);do nc -z localhost 10882 2>/dev/null && break;sleep 2;done
-borne 30 idb describe >sortie-scroll/idb-description.txt
+echo 'Describe native target' | tee -a sortie-scroll/journal.txt
+if ! borne 90 idb describe >sortie-scroll/idb-description.txt;then
+ sleep 3
+ borne 90 idb describe >sortie-scroll/idb-description.txt
+fi
 for PORT in 8766 8765;do
  xcrun simctl terminate "$UDID" com.apple.mobilesafari || true
  if ! borne 180 xcrun simctl openurl "$UDID" "http://127.0.0.1:$PORT/";then

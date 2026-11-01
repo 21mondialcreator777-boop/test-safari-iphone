@@ -23,8 +23,12 @@ for _ in $(seq 1 30);do nc -z localhost 10882 2>/dev/null && break;sleep 2;done
 borne 30 idb describe >sortie-scroll/idb-description.txt
 for PORT in 8766 8765;do
  xcrun simctl terminate "$UDID" com.apple.mobilesafari || true
- borne 180 xcrun simctl openurl "$UDID" "http://127.0.0.1:$PORT/"
+ if ! borne 180 xcrun simctl openurl "$UDID" "http://127.0.0.1:$PORT/";then
+  sleep 3
+  borne 180 xcrun simctl openurl "$UDID" "http://127.0.0.1:$PORT/" || true
+ fi
  for _ in $(seq 1 12);do [ -f "sortie-scroll/proof-$PORT.ndjson" ] && break;sleep 5;done
+ sleep 5
  borne 90 xcrun simctl io "$UDID" screenshot --type=png "sortie-scroll/$PORT-before.png"
  for GESTURE in $(seq 1 8);do
   if ! borne 30 idb ui swipe 190 520 190 170 --delta 50 --duration 0.5 >>sortie-scroll/gestures.log 2>&1;then
@@ -39,13 +43,16 @@ python3 - <<'PY'
 import json,pathlib
 result={}
 for port in [8765,8766]:
- rows=[json.loads(s) for s in pathlib.Path(f'sortie-scroll/proof-{port}.ndjson').read_text().splitlines()]
+ file=pathlib.Path(f'sortie-scroll/proof-{port}.ndjson')
+ if not file.exists():result[str(port)]={'verdict':'NON VERIFIABLE: no page evidence'};continue
+ rows=[json.loads(s) for s in file.read_text().splitlines()]
  live=[r for r in rows if not r['hidden']]
  result[str(port)]={'touchmove':max(r['counts']['touchmove'] for r in live),'pointermove':max(r['counts']['pointermove'] for r in live),'scroll':max(r['scrollY'] for r in live),'hashes':len({r['hash'] for r in live}),'images':len({r['diagnostic']['image'] for r in live}),'totalVh':live[-1]['diagnostic']['total'],'lastFilmTime':live[-1]['diagnostic']['t']}
  print(port,result[str(port)])
- candidate=result[str(port)]
- assert candidate['touchmove']>=3,'NON VERIFIABLE: no actual touch pan'
- assert candidate['hashes']>=3 and candidate['images']>=3,'ROUGE: film remained visually frozen'
- if port==8766:assert 2000<=candidate['totalVh']<=3600,'ROUGE: wrong candidate cadence'
 pathlib.Path('sortie-scroll/result.json').write_text(json.dumps(result,indent=2))
+for port in [8766,8765]:
+ candidate=result[str(port)]
+ assert candidate.get('touchmove',0)>=3,f'NON VERIFIABLE: no actual touch pan on {port}'
+ assert candidate['hashes']>=3 and candidate['images']>=3,f'ROUGE: film remained visually frozen on {port}'
+ if port==8766:assert 2000<=candidate['totalVh']<=3600,'ROUGE: wrong candidate cadence'
 PY

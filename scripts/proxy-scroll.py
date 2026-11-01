@@ -10,9 +10,12 @@ cache=pathlib.Path('cache-scroll');cache.mkdir(exist_ok=True)
 out=pathlib.Path('sortie-scroll');out.mkdir(exist_ok=True)
 locks={}; lock=threading.Lock()
 host_js=b"""
+let settled=0;
 const navigation=setInterval(()=>{
- if(document.querySelector('iframe')){clearInterval(navigation);return;}
- [...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Prestations')?.click();
+ const buttons=[...document.querySelectorAll('button')];
+ buttons.find(b=>b.textContent.trim()==='Refuser')?.click();
+ if(document.querySelector('iframe')){if(++settled>15)clearInterval(navigation);return;}
+ buttons.find(b=>b.textContent.trim()==='Prestations')?.click();
 },1000);
 setTimeout(()=>clearInterval(navigation),45000);
 """

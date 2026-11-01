@@ -26,25 +26,11 @@ for(const name of Object.keys(counts))addEventListener(name,()=>counts[name]++,{
 const tiny=document.createElement('canvas');tiny.width=24;tiny.height=16;
 const ctx=tiny.getContext('2d',{willReadFrequently:true});
 let tick=0;
-let phase='';
-// Synthetic control clicks are labelled; the eight pans below remain native idb gestures.
-setInterval(async()=>{
- try{
-  const next=(await (await fetch('/__phase')).text()).trim();if(!next||next===phase)return;phase=next;
-  const b=document.querySelector('[data-film-play]');if(!b)return;
-  const state=window.PIFILM?.diagnostic()?.lecture;
-  if(next==='pause'){if(state&&!state.pause&&state.cible>window.PIFILM.diagnostic().t)b.click();}
-  if(next==='play'){
-   if(state&&!state.pause&&state.cible>window.PIFILM.diagnostic().t)b.click();
-   b.click();
-  }
- }catch{}
-},200);
 setInterval(()=>{
  const film=window.PIFILM,canvas=document.getElementById('cv');if(!film||!canvas)return;
  let hash=2166136261;
  try{ctx.drawImage(canvas,0,0,24,16);const pixels=ctx.getImageData(0,0,24,16).data;for(const p of pixels)hash=Math.imul(hash^p,16777619)>>>0;}catch{}
- const record={tick:++tick,at:Date.now(),scrollY,counts:{...counts},hidden:document.hidden,hash,phase,lock:document.documentElement.dataset.filmLock||null,drawnTime:canvas.dataset.filmTime,drawnSeen:canvas.dataset.filmSeen,diagnostic:film.diagnostic()};
+ const record={tick:++tick,at:Date.now(),scrollY,counts:{...counts},hidden:document.hidden,hash,controls:document.querySelectorAll('[data-film-play],.film-playback').length,waiting:document.documentElement.dataset.filmWaiting||null,lock:document.documentElement.dataset.filmLock||null,drawnTime:canvas.dataset.filmTime,drawnSeen:canvas.dataset.filmSeen,diagnostic:film.diagnostic()};
  fetch('/__scroll-proof',{method:'POST',body:JSON.stringify(record)}).catch(()=>{});
 },200);
 """
@@ -57,10 +43,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(204);self.end_headers()
     def do_GET(self):
         route=urlsplit(self.path).path;fixed=self.server.server_port==8766
-        if route=='/__phase':
-            phase=out/f'phase-{self.server.server_port}'
-            body=phase.read_bytes() if phase.exists() else b'';mime='text/plain'
-        elif route=='/__host-scroll.js':body=host_js;mime='text/javascript'
+        if route=='/__host-scroll.js':body=host_js;mime='text/javascript'
         elif route=='/__probe-scroll.js':body=probe_js;mime='text/javascript'
         elif fixed and route in patches:body=patches[route].encode();mime='text/css' if route.endswith('.css') else 'text/javascript'
         else:
@@ -80,11 +63,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if route in ['/prestations/index.html','/prestations/']:
                     if fixed:
                         def maps(match):
-                            mapping=json.loads(match[1]);mapping.setdefault('imports',{}).update({'./js/data.js':'./js/data.js?v=20261101-complet','./js/film.js':'./js/film.js?v=20261101-complet'})
+                            mapping=json.loads(match[1]);mapping.setdefault('imports',{}).update({'./js/data.js':'./js/data.js?v=20261101-scroll-seul-v2','./js/film.js':'./js/film.js?v=20261101-scroll-seul-v2'})
                             return '<script type="importmap">'+json.dumps(mapping)+'</script>'
                         body=re.sub(r'<script type="importmap">(.*?)</script>',maps,body.decode(),flags=re.S).encode()
-                        body=re.sub(rb'js/main.js(?:\?[^"\s]*)?',b'js/main.js?v=20261101-complet',body)
-                        body=body.replace(b'</head>',b'<link rel="stylesheet" href="css/film-playback.css?v=20261101-complet"></head>')
+                        body=re.sub(rb'js/main.js(?:\?[^"\s]*)?',b'js/main.js?v=20261101-scroll-seul-v2',body)
+                        body=body.replace(b'</head>',b'<link rel="stylesheet" href="css/film-playback.css?v=20261101-scroll-seul-v2"></head>')
                     body=body.replace(b'</body>',b'<script src="/__probe-scroll.js"></script></body>')
                 elif route=='/':body=body.replace(b'</body>',b'<script src="/__host-scroll.js"></script></body>')
         total=len(body);start=0;end=total-1

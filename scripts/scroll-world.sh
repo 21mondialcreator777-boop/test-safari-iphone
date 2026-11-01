@@ -25,7 +25,7 @@ if ! borne 90 idb describe >sortie-scroll/idb-description.txt;then
  sleep 3
  borne 90 idb describe >sortie-scroll/idb-description.txt
 fi
-for PORT in 8766 8765;do
+for PORT in 8766;do
  xcrun simctl terminate "$UDID" com.apple.mobilesafari || true
  if ! borne 180 xcrun simctl openurl "$UDID" "http://127.0.0.1:$PORT/";then
   sleep 3
@@ -35,54 +35,38 @@ for PORT in 8766 8765;do
  sleep 5
  borne 90 xcrun simctl io "$UDID" screenshot --type=png "sortie-scroll/$PORT-before.png"
  for GESTURE in $(seq 1 8);do
-  if ! borne 30 idb ui swipe 190 520 190 170 --delta 50 --duration 0.5 >>sortie-scroll/gestures.log 2>&1;then
+  DURATION=0.5;[ "$GESTURE" -gt 4 ] && DURATION=0.12
+  echo "native pan $GESTURE duration=$DURATION" >>sortie-scroll/gestures.log
+  if ! borne 30 idb ui swipe 190 520 190 170 --delta 50 --duration "$DURATION" >>sortie-scroll/gestures.log 2>&1;then
    echo "NON VERIFIABLE: gesture $GESTURE timed out" | tee -a sortie-scroll/journal.txt;break
   fi
   sleep 1
  done
  sleep 5
  borne 90 xcrun simctl io "$UDID" screenshot --type=png "sortie-scroll/$PORT-after.png"
- if [ "$PORT" = 8766 ];then
-  echo play >"sortie-scroll/phase-$PORT"
-  sleep 2
-  echo pause >"sortie-scroll/phase-$PORT"
-  sleep 3
-  borne 90 xcrun simctl io "$UDID" screenshot --type=png "sortie-scroll/$PORT-pause.png"
-  echo play >"sortie-scroll/phase-$PORT"
-  for _ in $(seq 1 24);do
-   sleep 5
-   if python3 -c "import json; r=json.loads(open('sortie-scroll/proof-$PORT.ndjson').readlines()[-1]); exit(0 if r['diagnostic'].get('lecture',{}).get('terminee') else 1)";then break;fi
-  done
-  borne 90 xcrun simctl io "$UDID" screenshot --type=png "sortie-scroll/$PORT-complete.png"
- fi
 done
 python3 - <<'PY'
 import json,pathlib
 result={}
-for port in [8765,8766]:
+for port in [8766]:
  file=pathlib.Path(f'sortie-scroll/proof-{port}.ndjson')
  if not file.exists():result[str(port)]={'verdict':'NON VERIFIABLE: no page evidence'};continue
  rows=[json.loads(s) for s in file.read_text().splitlines()]
  live=[r for r in rows if not r['hidden']]
  result[str(port)]={'touchmove':max(r['counts']['touchmove'] for r in live),'pointermove':max(r['counts']['pointermove'] for r in live),'scroll':max(r['scrollY'] for r in live),'hashes':len({r['hash'] for r in live}),'images':len({r['diagnostic']['image'] for r in live}),'totalVh':live[-1]['diagnostic']['total'],'lastFilmTime':live[-1]['diagnostic']['t']}
  if port==8766:
-  complete=[r for r in live if r['diagnostic'].get('lecture',{}).get('terminee')]
-  paused=[r for r in live if r['phase']=='pause' and r['diagnostic'].get('lecture',{}).get('pause')]
-  moving=[r for r in live if r['phase']=='play' and not r['diagnostic'].get('lecture',{}).get('terminee')]
-  first=complete[0] if complete else None
-  pauses=[float(r['drawnTime']) for r in paused if r.get('drawnTime')]
   rates=[(float(b['drawnTime'])-float(a['drawnTime']))/((b['at']-a['at'])/1000) for a,b in zip(live,live[1:]) if a.get('drawnTime') and b.get('drawnTime') and b['at']>a['at'] and a['lock'] and b['lock']]
-  result[str(port)].update({'completed':bool(first),'lastSeen':first['diagnostic']['lecture']['vueJusqua'] if first else None,'lockAfter':first['lock'] if first else 'unknown','elapsedToComplete':(first['at']-live[0]['at'])/1000 if first else None,'pauseSamples':len(pauses),'pauseSpread':max(pauses)-min(pauses) if pauses else None,'maximumObservedRate':max(rates) if rates else None,'controlClicks':'synthetic DOM clicks after eight native idb pans'})
+  before=[r for r in live if r['counts']['touchstart']==0]
+  result[str(port)].update({'maximumObservedRate':max(rates) if rates else None,'controls':max(r['controls'] for r in live),'beforeGestureTime':max(float(r['drawnTime'] or 0) for r in before) if before else None,'scrollOnly':live[-1]['diagnostic'].get('lecture',{}).get('scrollOnly'),'controlClicks':0})
  print(port,result[str(port)])
 pathlib.Path('sortie-scroll/result.json').write_text(json.dumps(result,indent=2))
-for port in [8766,8765]:
+for port in [8766]:
  candidate=result[str(port)]
  assert candidate.get('touchmove',0)>=3,f'NON VERIFIABLE: no actual touch pan on {port}'
  assert candidate['hashes']>=3 and candidate['images']>=3,f'ROUGE: film remained visually frozen on {port}'
  if port==8766:
   assert 2000<=candidate['totalVh']<=3600,'ROUGE: wrong candidate cadence'
-  assert candidate['completed'] and candidate['lastSeen']==885 and candidate['lockAfter'] is None,'ROUGE: full film never released the next section'
-  assert candidate['elapsedToComplete']>=55.9,'ROUGE: film skipped faster than normal playback'
-  assert candidate['pauseSamples']>=3 and candidate['pauseSpread']<0.02,'ROUGE: pause did not hold the displayed frame'
+  assert candidate['controls']==0 and candidate['scrollOnly'],'ROUGE: player controls still present'
+  assert candidate['beforeGestureTime']==0,'ROUGE: film advanced without a scroll gesture'
   assert candidate['maximumObservedRate']<=1.3,'ROUGE: observed film time advanced too quickly'
 PY

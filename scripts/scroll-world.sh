@@ -56,7 +56,7 @@ for port in [8766]:
  result[str(port)]={'touchmove':max(r['counts']['touchmove'] for r in live),'pointermove':max(r['counts']['pointermove'] for r in live),'scroll':max(r['scrollY'] for r in live),'hashes':len({r['hash'] for r in live}),'images':len({r['diagnostic']['image'] for r in live}),'totalVh':live[-1]['diagnostic']['total'],'lastFilmTime':live[-1]['diagnostic']['t']}
  if port==8766:
   rates=[(float(b['drawnTime'])-float(a['drawnTime']))/((b['at']-a['at'])/1000) for a,b in zip(live,live[1:]) if a.get('drawnTime') and b.get('drawnTime') and b['at']>a['at'] and a['lock'] and b['lock']]
-  before=[r for r in live if r['counts']['touchstart']==0]
+  before=[r for r in live if r['counts']['touchstart']==0 and r.get('drawnTime') is not None]
   result[str(port)].update({'maximumObservedRate':max(rates) if rates else None,'controls':max(r['controls'] for r in live),'beforeGestureTime':max(float(r['drawnTime'] or 0) for r in before) if before else None,'scrollOnly':live[-1]['diagnostic'].get('lecture',{}).get('scrollOnly'),'controlClicks':0})
  print(port,result[str(port)])
 pathlib.Path('sortie-scroll/result.json').write_text(json.dumps(result,indent=2))
